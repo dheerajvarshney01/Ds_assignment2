@@ -3,37 +3,40 @@ import numpy as np
 from pprint import pprint
 from sklearn.datasets import fetch_20newsgroups
 
-newsgroups_data = fetch_20newsgroups(subset='all')
-
 category = ['alt.atheism', 'sci.space','talk.religion.misc', 'comp.graphics']
 
-newsgroups_data = fetch_20newsgroups(subset='all',remove = ('headers','footers','quotes'),categories=category )
-
-from nltk.corpus import stopwords
-stop_words=set(stopwords.words("english"))
-
-updated_data = ''.join(newsgroups_data.data)
+newsgroups_data = fetch_20newsgroups(subset='all',remove = ('headers','footers','quotes'),
+                                    categories=category, shuffle = True)
 
 import pandas as pd
 df_unprocessed = pd.DataFrame.from_records(newsgroups_data, columns =['data'] )
+df_unprocessed = pd.DataFrame(df_unprocessed).join(pd.DataFrame(newsgroups_data.target,
+                        columns=['category'], index=pd.DataFrame(df_unprocessed).index))
+
 
 #///////////////////////////////////////////////////////////////////////////////////////////////
-
+# Q2.a
+#///////////////////////////////////////////////////////////////////////////////////////////////
 df = df_unprocessed
+## drop rows where data == '':
+df = df.drop(df[df.data == ''].index)
 
-#///////////////////////////////////////////////////////////////////////////////////////////////
-
+## Remove numbers and other non-letter characters: ###############################################
 #https://stackoverflow.com/questions/44227748/removing-newlines-from-messy-strings-in-pandas-dataframe-cells
-df['data'] = df['data'].replace('[\n\t]','', regex=True)
+df['data'] = df['data'].replace('[\n]',' ', regex=True)
 
 #https://stackoverflow.com/questions/39782418/remove-punctuations-in-pandas
-df['data'] = df['data'].str.replace('[^\w\s\t]','')
+df['data'] = df['data'].str.replace('[^\'\w\s\t]',' ')
 
 df['data'] = df['data'].str.replace('\d+', '')
 
 df['data'] = df['data'].apply(lambda x: x.lower())
 
 df['data'] = df['data'].apply(lambda x: x.split())
+
+## FRemove stop words: ############################################################################
+from nltk.corpus import stopwords
+stop_words=set(stopwords.words("english"))
 
 def removeStopWords(tokenized_words):
     filtered_sent=[]
@@ -43,6 +46,240 @@ def removeStopWords(tokenized_words):
     return filtered_sent
 
 df['data'] = df['data'].apply(removeStopWords)
+
+## Stem the words: ################################################################################
+from nltk.stem import PorterStemmer
+ps = PorterStemmer()
+
+def stemWords(commentList):
+    stemmedWords = []
+    for word in commentList:
+        stemmedWords.append(ps.stem(word))
+    return stemmedWords
+
+df['data'] = df['data'].apply(stemWords)
+
+
+
+#///////////////////////////////////////////////////////////////////////////////////////////////
+# Q2.b
+#///////////////////////////////////////////////////////////////////////////////////////////////
+## First of all let's concatinate tokens to form documents:
+df['documents'] = df['data'].apply(lambda x : ' '.join(x))
+
+## convert the corpus into a bag-of-words tf-idf weighted vector representation:
+from sklearn.feature_extraction.text import CountVectorizer
+countVectorizer = CountVectorizer()
+sparseMatrixOfCounts = countVectorizer.fit_transform(df['documents'])
+print('Vocabulary size = ', len(countVectorizer.vocabulary_.keys()))
+
+from sklearn.feature_extraction.text import TfidfTransformer
+transformer = TfidfTransformer(smooth_idf=False)
+tfidf = transformer.fit_transform(sparseMatrixOfCounts)
+
+#///////////////////////////////////////////////////////////////////////////////////////////////
+# Q2.c
+#///////////////////////////////////////////////////////////////////////////////////////////////
+## Let's add the tfidf to the dataframe:
+df = pd.DataFrame(df).join(pd.DataFrame(tfidf.toarray(), index=pd.DataFrame(df).index))
+
+## Drop 'documents' and 'data' columns:
+df.drop(['documents', 'data'], axis= 1, inplace=True)
+
+## Split dataframe to the train and test subsets:
+from sklearn.model_selection import train_test_split
+train, test = train_test_split(df, test_size=0.3)
+##train = train.reset_index().drop(['index'], axis=1)
+##test = test.reset_index().drop(['index'], axis=1)
+train_x = train.drop('category', axis=1)
+train_y = train['category']
+test_x = test.drop('category', axis=1)
+test_y = test['category']
+
+## Train SVM and report confusion matrix:
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+################ 'rbf' kernel:
+from sklearn.svm import SVC
+clfSVC_rbf = SVC(kernel = 'rbf')
+clfSVC_rbf.fit(train_x, train_y)
+
+pred_y_rbf = clfSVC_rbf.predict(test_x)
+cm_rbf = confusion_matrix(test_y, pred_y_rbf)
+accuracy_rbf = accuracy_score(test_y, pred_y_rbf)
+
+################ 'linear'kernel:
+from sklearn.svm import SVC
+clfSVC_linear = SVC(kernel = 'linear')
+clfSVC_linear.fit(train_x, train_y)
+
+pred_y_linear = clfSVC_linear.predict(test_x)
+cm_linear = confusion_matrix(test_y, pred_y_linear)
+accuracy_linear = accuracy_score(test_y, pred_y_linear)
+
+################ 'poly'kernel:
+from sklearn.svm import SVC
+clfSVC_poly = SVC(kernel = 'poly')
+clfSVC_poly.fit(train_x, train_y)
+
+pred_y_poly = clfSVC_poly.predict(test_x)
+cm_poly = confusion_matrix(test_y, pred_y_poly)
+accuracy_poly = accuracy_score(test_y, pred_y_poly)
+
+################ 'sigmoid'kernel:
+from sklearn.svm import SVC
+clfSVC_sigmoid = SVC(kernel = 'sigmoid')
+clfSVC_sigmoid.fit(train_x, train_y)
+
+pred_y_sigmoid = clfSVC_sigmoid.predict(test_x)
+cm_sigmoid = confusion_matrix(test_y, pred_y_sigmoid)
+accuracy_sigmoid = accuracy_score(test_y, pred_y_sigmoid)
+
+## Train MultinomialNB and report confusion matrix:
+from sklearn.naive_bayes import MultinomialNB
+clfMNB = MultinomialNB()
+clfMNB.fit(train_x, train_y)
+
+pred_y_MNB = clfMNB.predict(test_x)
+cm_MNB = confusion_matrix(test_y, pred_y_MNB)
+accuracy_MNB = accuracy_score(test_y, pred_y_MNB)
+
+
+#///////////////////////////////////////////////////////////////////////////////////////////////
+# Q2.d
+#///////////////////////////////////////////////////////////////////////////////////////////////
+df_nounsOnly = df_unprocessed
+## drop rows where data == '':
+df_nounsOnly = df_nounsOnly.drop(df_nounsOnly[df_nounsOnly.data == ''].index)
+
+## Perform part od speech tagging on the data:
+df_nounsOnly['tokenized_data'] = df_nounsOnly['data'].apply(lambda x: nltk.pos_tag(x.split()))
+
+## Extract nouns:
+def extractNouns(tuples):
+    nouns = []
+    for tup in tuples:
+        if tup[1] in ['NN', 'NNS', 'NNP', 'NNPS']:
+            nouns.append(tup[0])
+    return ' '.join(nouns)
+
+
+df_nounsOnly['nouns_only'] = df_nounsOnly['tokenized_data'].apply(extractNouns)
+## Drop columns unused in training and prediction:
+df_nounsOnly.drop(['data', 'tokenized_data'], inplace = True, axis = 1)
+
+## Perform cleaning as in Q2.a:
+### Remove numbers and other non-letter characters: ###############################################
+#https://stackoverflow.com/questions/44227748/removing-newlines-from-messy-strings-in-pandas-dataframe-cells
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].replace('[\n]',' ', regex=True)
+
+#https://stackoverflow.com/questions/39782418/remove-punctuations-in-pandas
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].str.replace('[^\'\w\s\t]',' ')
+
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].str.replace('\d+', '')
+
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].apply(lambda x: x.lower())
+
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].apply(lambda x: x.split())
+
+### FRemove stop words: ############################################################################
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].apply(removeStopWords)
+### Stem nouns: ################################################################################
+df_nounsOnly['nouns_only'] = df_nounsOnly['nouns_only'].apply(stemWords)
+### Convert nouns into joined documents:
+df_nounsOnly['documents'] = df_nounsOnly['nouns_only'].apply(lambda x : ' '.join(x))
+
+## convert the corpus into a bag-of-words tf-idf weighted vector representation:
+countVectorizer_nounsOnly = CountVectorizer()
+sparseMatrixOfCounts = countVectorizer_nounsOnly.fit_transform(df_nounsOnly['documents'])
+print('Vocabulary size = ', len(countVectorizer.vocabulary_.keys()))
+
+transformer_nounsOnly = TfidfTransformer(smooth_idf=False)
+tfidf_nounsOnly = transformer_nounsOnly.fit_transform(sparseMatrixOfCounts)
+
+## Let's add the tfidf to the dataframe:
+df_nounsOnly = pd.DataFrame(df_nounsOnly).join(pd.DataFrame(tfidf_nounsOnly.toarray(), index=pd.DataFrame(df_nounsOnly).index))
+
+## Drop 'documents' and 'nouns_only' columns:
+df_nounsOnly.drop(['documents', 'nouns_only'], axis= 1, inplace=True)
+
+## Split dataframe to the train and test subsets:
+train_nounsOnly, test_nounsOnly = train_test_split(df_nounsOnly, test_size=0.3)
+train_x_nounsOnly = train_nounsOnly.drop('category', axis=1)
+train_y_nounsOnly = train_nounsOnly['category']
+test_x_nounsOnly = test_nounsOnly.drop('category', axis=1)
+test_y_nounsOnly = test_nounsOnly['category']
+
+################ 'rbf' kernel:
+clfSVC_rbf_nounsOnly = SVC(kernel = 'rbf')
+clfSVC_rbf_nounsOnly.fit(train_x_nounsOnly, train_y_nounsOnly)
+
+pred_y_rbf_nounsOnly = clfSVC_rbf_nounsOnly.predict(test_x_nounsOnly)
+cm_rbf_nounsOnly = confusion_matrix(test_y, pred_y_rbf_nounsOnly)
+accuracy_rbf_nounsOnly = accuracy_score(test_y, pred_y_rbf_nounsOnly)
+
+################ 'linear'kernel:
+clfSVC_linear_nounsOnly = SVC(kernel = 'linear')
+clfSVC_linear_nounsOnly.fit(train_x_nounsOnly, train_y_nounsOnly)
+
+pred_y_linear_nounsOnly = clfSVC_linear_nounsOnly.predict(test_x_nounsOnly)
+cm_linear_nounsOnly = confusion_matrix(test_y_nounsOnly, pred_y_linear_nounsOnly)
+accuracy_linear_nounsOnly = accuracy_score(test_y_nounsOnly, pred_y_linear_nounsOnly)
+
+################ 'poly'kernel:
+clfSVC_poly_nounsOnly = SVC(kernel = 'poly')
+clfSVC_poly_nounsOnly.fit(train_x_nounsOnly, train_y_nounsOnly)
+
+pred_y_poly_nounsOnly = clfSVC_poly_nounsOnly.predict(test_x_nounsOnly)
+cm_poly_nounsOnly = confusion_matrix(test_y, pred_y_poly_nounsOnly)
+accuracy_poly_nounsOnly = accuracy_score(test_y, pred_y_poly_nounsOnly)
+
+################ 'sigmoid'kernel:
+clfSVC_sigmoid_nounsOnly = SVC(kernel = 'sigmoid')
+clfSVC_sigmoid_nounsOnly.fit(train_x_nounsOnly, train_y_nounsOnly)
+
+pred_y_sigmoid_nounsOnly = clfSVC_sigmoid_nounsOnly.predict(test_x_nounsOnly)
+cm_sigmoid_nounsOnly = confusion_matrix(test_y, pred_y_sigmoid_nounsOnly)
+accuracy_sigmoid_nounsOnly = accuracy_score(test_y, pred_y_sigmoid_nounsOnly)
+
+## Train MultinomialNB and report confusion matrix:
+clfMNB_nounsOnly = MultinomialNB()
+clfMNB_nounsOnly.fit(train_x_nounsOnly, train_y_nounsOnly)
+
+pred_y_MNB_nounsOnly = clfMNB_nounsOnly.predict(test_x_nounsOnly)
+cm_MNB_nounsOnly = confusion_matrix(test_y, pred_y_MNB_nounsOnly)
+accuracy_MNB_nounsOnly = accuracy_score(test_y, pred_y_MNB_nounsOnly)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def getPartsOfSpeech(tokenized_words):
     partsOfSpeech = []
