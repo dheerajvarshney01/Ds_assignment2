@@ -27,7 +27,7 @@ df = df.drop(df[df.data == ''].index)
 df['data'] = df['data'].replace('[\n]',' ', regex=True)
 
 ###https://stackoverflow.com/questions/39782418/remove-punctuations-in-pandas
-df['data'] = df['data'].str.replace('[^\'\w\s\t]',' ')
+df['data'] = df['data'].str.replace('[^\w\s\t]',' ')
 
 df['data'] = df['data'].str.replace('\d+', '')
 
@@ -325,7 +325,7 @@ accuracy_sigmoid_nounsOnly = accuracy_score(test_y_nounsOnly, pred_y_sigmoid_nou
 print("SVM 'sigmoid' kernel accuracy for nouns only is ", accuracy_sigmoid_nounsOnly)
 
 ## The vacabulary consisting of nouns only contains 17881 words, wherease the vocabulary of par c
-## contains 21923 words.
+## contains 21493 words.
 ## Here is the table of occuracies:
 
 ##               | part c   | part d
@@ -335,3 +335,10 @@ print("SVM 'sigmoid' kernel accuracy for nouns only is ", accuracy_sigmoid_nouns
 ## linear SVC    | 0.824    | 0.825
 ## poly SVC      | 0.59     | 0.627
 ## sigmoid SVC   | 0.828    | 0.824
+
+##The accuracies above chanch slightly from run to run of the script,
+##but in general - the accuracy on the complete vocabulary is statistically higher
+##than on the vacabulary containing nouns only.
+##Taking in account that accuracy digrades by 1-2% when text is limited to nouns only,
+##it might be benificial to remove every part of speech but nouns from documents before
+##applying text classification models we worked in this assignment with.
